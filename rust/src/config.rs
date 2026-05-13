@@ -20,7 +20,8 @@ impl Config {
     pub fn from_env() -> Result<Self> {
         let api_token = env::var("API_TOKEN")
             .ok()
-            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
             .ok_or_else(|| anyhow!("API_TOKEN env var is required and must be non-empty"))?;
 
         let bind_addr = env_string("BIND_ADDR", "0.0.0.0:8080");

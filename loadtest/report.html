@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>k6 report — Rust vs PHP</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --rust: #dea584;
+      --php: #8892bf;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 1.5rem clamp(1rem, 3vw, 2.5rem);
+      line-height: 1.5;
+    }
+    h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 0.5rem; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+    .warn {
+      background: #3d2a00;
+      border: 1px solid #9a6700;
+      color: #f0c14c;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+    }
+    .grid {
+      display: grid;
+      gap: 1.25rem;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1rem 1rem 0.5rem;
+      border: 1px solid #30363d;
+    }
+    .card h2 { font-size: 0.95rem; margin: 0 0 0.75rem; color: var(--muted); font-weight: 500; }
+    canvas { max-height: 280px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 1rem; }
+    th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid #30363d; }
+    th { color: var(--muted); font-weight: 500; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .legend { display: flex; gap: 1rem; margin-top: 0.5rem; font-size: 0.8rem; color: var(--muted); }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 0.35rem; vertical-align: middle; }
+    .dot.rust { background: var(--rust); }
+    .dot.php { background: var(--php); }
+    .glossary { font-size: 0.82rem; color: var(--muted); }
+    .glossary code { color: #79c0ff; font-size: 0.9em; }
+    .glossary td:first-child { white-space: nowrap; font-variant-numeric: tabular-nums; vertical-align: top; padding-right: 0.75rem; }
+    .glossary td:last-child { color: var(--text); }
+  </style>
+</head>
+<body>
+  <h1>k6 comparison: Rust vs PHP</h1>
+  <p class="sub">Embedded values from <code>results-local.json</code> (Rust) and <code>results-php.json</code> (PHP). Open this file in your browser (double-click or Live Server). No backend required.</p>
+  <div class="warn">
+    <strong>Note:</strong> the PHP run hit ~33% <code>http_req_failed</code> and ~60s queueing (50 VUs). Application-level averages only include successful responses; throughput is not comparable until you rerun PHP with fewer VUs and ~0% errors.
+  </div>
+
+  <div class="legend">
+    <span><span class="dot rust"></span>Rust</span>
+    <span><span class="dot php"></span>PHP</span>
+  </div>
+
+  <div class="grid">
+    <div class="card"><h2>Throughput (req/s)</h2><canvas id="chartRate"></canvas></div>
+    <div class="card"><h2>App time: processing_time_ms (avg / p95)</h2><canvas id="chartProc"></canvas></div>
+    <div class="card"><h2>Internal timing (avg ms)</h2><canvas id="chartTiming"></canvas></div>
+    <div class="card"><h2>Memory peak_estimate_kb (avg / p95)</h2><canvas id="chartMem"></canvas></div>
+  </div>
+
+  <div class="card" style="margin-top:1.25rem;">
+    <h2>Numeric summary</h2>
+    <table>
+      <thead><tr><th>Metric</th><th class="num">Rust</th><th class="num">PHP</th></tr></thead>
+      <tbody id="tbl"></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:1.25rem;">
+    <h2>Embedded fields (<code>R</code> / <code>P</code>)</h2>
+    <p class="glossary" style="margin:0 0 0.75rem;">Paste these numbers from k6 <code>--summary-export</code> JSON (Rust → <code>R</code>, PHP → <code>P</code>). Values below describe each property.</p>
+    <table class="glossary" id="glossary"></table>
+    <h3 style="font-size:0.9rem;margin:1rem 0 0.5rem;color:var(--muted);font-weight:500;">Numeric summary table — row meanings</h3>
+    <table class="glossary" id="glossaryRows"></table>
+  </div>
+
+  <script>
+    /**
+     * R / P: one object per backend run. All app_* figures are k6 Trend aggregates
+     * over successful POST /images/resize responses whose JSON was parsed (see loadtest/k6/resize.js).
+     */
+    const R = {
+      label: "Rust",
+      httpRate: 22.273408507918717,
+      failed: 0,
+      procAvg: 1173.2826643894107,
+      procP95: 1802.9999999999982,
+      dlAvg: 1127.8423000284656,
+      rsAvg: 37.52917734130373,
+      svAvg: 6.926273840022772,
+      peakAvg: 9577.320649017936,
+      peakP95: 28210.199999999983,
+      httpDurAvg: 1080.371991391362,
+      resizePasses: 3513,
+    };
+    const P = {
+      label: "PHP",
+      httpRate: 0.6400290241033881,
+      failed: 0.328125,
+      procAvg: 1902.4285714285713,
+      procP95: 2715.8,
+      dlAvg: 1638.8701298701299,
+      rsAvg: 80.27272727272727,
+      svAvg: 173.35064935064935,
+      peakAvg: 8191.286623376623,
+      peakP95: 19351.016,
+      httpDurAvg: 40576.70795501561,
+      resizePasses: 77,
+    };
+
+    const bar = (ctx, title, labels, rustVals, phpVals) => {
+      new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            { label: "Rust", data: rustVals, backgroundColor: "rgba(222,165,132,0.85)", borderRadius: 4 },
+            { label: "PHP", data: phpVals, backgroundColor: "rgba(136,146,191,0.85)", borderRadius: 4 },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { labels: { color: "#8b949e" } } },
+          scales: {
+            x: { ticks: { color: "#8b949e" }, grid: { color: "#30363d" } },
+            y: { ticks: { color: "#8b949e" }, grid: { color: "#30363d" } },
+          },
+        },
+      });
+    };
+
+    bar(document.getElementById("chartRate"), "", ["req/s"], [R.httpRate], [P.httpRate]);
+    bar(document.getElementById("chartProc"), "", ["avg (ms)", "p95 (ms)"], [R.procAvg, R.procP95], [P.procAvg, P.procP95]);
+    bar(document.getElementById("chartTiming"), "", ["download", "resize", "save"], [R.dlAvg, R.rsAvg, R.svAvg], [P.dlAvg, P.rsAvg, P.svAvg]);
+    bar(document.getElementById("chartMem"), "", ["avg (kb)", "p95 (kb)"], [R.peakAvg, R.peakP95], [P.peakAvg, P.peakP95]);
+
+    const rows = [
+      ["http_reqs rate (req/s)", R.httpRate.toFixed(2), P.httpRate.toFixed(2)],
+      ["http_req_failed", (R.failed * 100).toFixed(1) + " %", (P.failed * 100).toFixed(1) + " %"],
+      ["app_processing_time_ms avg", R.procAvg.toFixed(0), P.procAvg.toFixed(0)],
+      ["app_processing_time_ms p95", R.procP95.toFixed(0), P.procP95.toFixed(0)],
+      ["app_timing_resize_ms avg", R.rsAvg.toFixed(1), P.rsAvg.toFixed(1)],
+      ["app_memory_peak_estimate_kb avg", R.peakAvg.toFixed(0), P.peakAvg.toFixed(0)],
+      ["http_req_duration avg (ms)", R.httpDurAvg.toFixed(0), P.httpDurAvg.toFixed(0)],
+      ["Resize checks OK (passes)", String(R.resizePasses), String(P.resizePasses)],
+    ];
+    document.getElementById("tbl").innerHTML = rows
+      .map(([a, b, c]) => `<tr><td>${a}</td><td class="num">${b}</td><td class="num">${c}</td></tr>`)
+      .join("");
+
+    const embeddedFieldHelp = [
+      ["<code>label</code>", "Display name for the series (Rust / PHP); reserved for future chart titles."],
+      ["<code>httpRate</code>", "k6 <code>http_reqs</code> rate (req/s): HTTP requests completed per second across the scenario (mostly resize, plus any /health calls)."],
+      ["<code>failed</code>", "k6 <code>http_req_failed</code> as a fraction 0–1 (timeouts, non-2xx, or failed requests). The table shows it as a percentage."],
+      ["<code>procAvg</code> / <code>procP95</code>", "Average and p(95) of <code>processing_time_ms</code> from the resize JSON body (total work the API attributes to one resize, including download)."],
+      ["<code>dlAvg</code>", "Average <code>timing.download_ms</code> from the JSON (time spent fetching the source image URL, e.g. picsum)."],
+      ["<code>rsAvg</code>", "Average <code>timing.resize_ms</code> from the JSON (decode + resize on the server)."],
+      ["<code>svAvg</code>", "Average <code>timing.save_ms</code> from the JSON (encode / write output)."],
+      ["<code>peakAvg</code> / <code>peakP95</code>", "Average and p(95) of <code>memory.peak_estimate_kb</code> from the JSON (server-reported peak memory estimate for that request)."],
+      ["<code>httpDurAvg</code>", "k6 <code>http_req_duration</code> average (ms): full round-trip time from the load generator (network, queueing in front of the app, and handler time)."],
+      ["<code>resizePasses</code>", "How many times the k6 check on resize HTTP 200 + JSON succeeded (iteration-level pass count, not the same as total HTTP requests)."],
+    ];
+    document.getElementById("glossary").innerHTML =
+      "<thead><tr><th>Field</th><th>What it is</th></tr></thead><tbody>" +
+      embeddedFieldHelp
+        .map(([k, d]) => `<tr><td>${k}</td><td>${d}</td></tr>`)
+        .join("") +
+      "</tbody>";
+
+    const summaryRowHelp = [
+      ["<code>http_reqs</code> rate (req/s)", "k6 throughput: completed HTTP requests per second for this run."],
+      ["<code>http_req_failed</code>", "Share of HTTP requests k6 marked as failed (shown as %). High values mean timeouts or errors; app_* trends still reflect only successful resize bodies."],
+      ["<code>app_processing_time_ms</code> avg / p95", "From resize JSON: total processing time reported by the API (avg and 95th percentile across sampled successes)."],
+      ["<code>app_timing_resize_ms</code> avg", "From resize JSON: server-side resize stage only (avg)."],
+      ["<code>app_memory_peak_estimate_kb</code> avg", "From resize JSON: estimated peak memory for the handler (avg)."],
+      ["<code>http_req_duration</code> avg (ms)", "k6 end-to-end latency per HTTP request from the client (includes waiting if the server is saturated)."],
+      ["Resize checks OK (passes)", "Count of k6 check passes for resize HTTP 200 with parseable JSON — proxy for successful resize iterations used in Trends."],
+    ];
+    document.getElementById("glossaryRows").innerHTML =
+      "<thead><tr><th>Row label</th><th>What it is</th></tr></thead><tbody>" +
+      summaryRowHelp.map(([k, d]) => `<tr><td>${k}</td><td>${d}</td></tr>`).join("") +
+      "</tbody>";
+  </script>
+</body>
+</html>

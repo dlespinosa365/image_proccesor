@@ -1,29 +1,54 @@
+# Servicios Rust y PHP con las mismas variables de entorno (un solo archivo: rust/.env).
+# Uso (desde la raíz del repo):
+#   cp .env.example rust/.env   # o copiá rust/.env.example; editá API_TOKEN
+#   docker compose up -d --build
+#
+# Puertos: Rust http://localhost:8080  |  PHP http://localhost:8081
+# Loadtest:  loadtest/k6/README.md
+
 services:
-  image_proccesor:
+  image_proccesor_rust:
     build:
-      context: .
+      context: ./rust
       dockerfile: Dockerfile
-    image: image_proccesor:latest
-    container_name: image_proccesor
+    image: image_proccesor_rust:latest
+    container_name: image_proccesor_rust
+    env_file:
+      - ./rust/.env
     ports:
       - "8080:8080"
     environment:
-      API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env or environment}
       BIND_ADDR: 0.0.0.0:8080
       OUTPUT_DIR: /data/images
-      MAX_DOWNLOAD_BYTES: ${MAX_DOWNLOAD_BYTES:-26214400}
-      DOWNLOAD_TIMEOUT_SECS: ${DOWNLOAD_TIMEOUT_SECS:-15}
-      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-1048576}
-      RESIZE_WORKERS: ${RESIZE_WORKERS:-}
-      JPEG_QUALITY: ${JPEG_QUALITY:-85}
-      MAX_SCALE: ${MAX_SCALE:-10}
-      RUST_LOG: ${RUST_LOG:-info}
     volumes:
-      - ./data:/data/images
+      - ./data/rust:/data/images
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
+
+  image_proccesor_php:
+    build:
+      context: ./php
+      dockerfile: Dockerfile
+    image: image_proccesor_php:latest
+    container_name: image_proccesor_php
+    env_file:
+      - ./rust/.env
+    ports:
+      - "8081:8080"
+    environment:
+      BIND_ADDR: 0.0.0.0:8080
+      OUTPUT_DIR: /data/images
+    volumes:
+      - ./data/php:/data/images
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
