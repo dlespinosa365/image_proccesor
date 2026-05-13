@@ -1,0 +1,42 @@
+[package]
+name = "image_proccesor"
+version = "0.1.0"
+edition = "2021"
+description = "High-throughput image resize API in Rust (Axum + Tokio)"
+
+[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["limit", "timeout", "trace"] }
+hyper = "1"
+http = "1"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+reqwest = { version = "0.12", features = ["rustls-tls", "stream"], default-features = false }
+bytes = "1"
+futures-util = "0.3"
+
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+fast_image_resize = { version = "5", features = ["image"] }
+
+uuid = { version = "1", features = ["v4"] }
+url = "2"
+
+thiserror = "2"
+anyhow = "1"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+subtle = "2"
+num_cpus = "1"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+opt-level = 3
